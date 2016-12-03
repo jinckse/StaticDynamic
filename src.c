@@ -1,6 +1,11 @@
+/** TODO
+	1. Build manipulator to determine exact measurements for links and offsets
+	2. Implement PD controller for Move function
+*/
+
 /*
 	File: src.c
-	Description: Robot manipulator that draws polygons
+	Description: Robot manipulator that draws polygons (all measurements in SI units)
 	Author: Team 6
 */
 #include <stdlib.h> 
@@ -42,7 +47,7 @@
 #define J1 NXT_PORT_B
 #define J2 NXT_PORT_C
 
-/* Canvas */
+/* Canvas based on 8.5" by 11" sheet of paper with 0.5" margins */
 #define CANVAS_M 0.267
 #define CANVAS_N 0.203
 #define CANVAS_MIDPOINT_X (CANVAS_N / 2)F
@@ -70,6 +75,9 @@ float polygon[MAX_POLYGON][3]= { {-1, -1, -1},
 										{-1, -1, -1},
 										{-1, -1, -1} };
 
+/* Counter */
+U8 n = 0;
+
 /*
 	FUNCTION PROTOTYPES
 */
@@ -91,17 +99,26 @@ TASK(Task1)
 	/* 
 		Main loop 
 	*/
-	while(1) {
+		
+	/* Is current point in first quadrant? */
+	while(polygon[n][0] > 0) {
 
-		/* Read Coordinate */
-
-		/* Is current coordinate in first quadrant? */
+		/* Read point */
+		point[0] = polygon[n][0];
+		point[1] = polygon[n][1];
+		point[2] = polygon[n][2];
 
 		/* Calculate new angles using inverse kinematics */
+		I_Kin(point, theta);
 
 		/* Move motors to new angles */
+		Move(theta);
 
+		/* Read to next point */
+		n++;
 	}
+
+	/* Brake all motors when complete */
 	
 	TerminateTask();
 }
@@ -139,6 +156,37 @@ void disp(int row, char *str, int val)
 */
 void I_Kin(float point[3], float theta[N_ANGLES]) {
 
+	/* Angle formulas */
+	float alpha = atan2(point[1], point[0]);
+	float beta = asin( D1 / sqrt( ((point[0] * point[0]) + (point[1] * point[1]))) );
+	theta[0] = alpha - beta;
+
+	/* Adjsut for offsets */
+	float point_0[3] = {0, 0, L0};
+
+	float p_trans[3] = { ( point[0] - (D2 * cos(theta[0])) + (D1 * sin(theta[0])) ),
+							 ( point[1] - (D1 * sin(theta[0])) - (D2 * cos(theta[0])) ),
+							 ( point[2] + L3 )
+						  };
+
+	/* Set up remaining parameters */
+	float L4 = sqrt( ( (p_trans[0] - point_0[0]) * (p_trans[1] - point_0[0]) )
+		+ ( (p_trans[1] - point_0[1]) * (p_trans[1] - point_0[1]) )
+		+ ( (p_trans[2] - point_0[2]) * (p_trans[2] - point_0[2]) ) );
+
+	float beta2 = acos( ( (2* (L1 * L1)) - (L4 * L4) ) / (2 * (L1 * L1)) );
+
+	float alpha2 = acos( (p_trans[2] - L0) / L4 );
+
+	float delta = ( M_PI - beta2) / 2;
+
+	/* Determine angles */
+	theta[1] = alpha2 - delta - (M_PI / 2);
+	theta[2] = M_PI - beta2;
+	theta[3] = (M_PI / 2) - theta[1] - theta[2];
+	theta[4] = 0;
+	theta[5] = 0;
+
 }
 
 /*
@@ -146,11 +194,11 @@ void I_Kin(float point[3], float theta[N_ANGLES]) {
 	Description: 
 		Pulses manipulator joint motors with assistance from PD-controller to move to given angle.
 	Params:
-		float angle - New angle
+		float theta[] - New angles
 	Returns: 
 		Nothing
 */
 void Move(float theta[N_ANGLES]) {
-	
+	/* Move to new angles using current angles (rev count) from motors */	
 }
 
