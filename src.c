@@ -1,129 +1,201 @@
-/** TODO
-	1. Build manipulator to determine exact measurements for links and offsets
-	2. Implement PD controller for Move function
+/**TODO
+	1. The color detection works, and switches behavior, but it doesn't appear to detect the color
+		change quick enough in all cases. The spin can also cause it too lose site as well, and 
+		switch behaviors.
+
+	2. Now that the contorller code is removed from the drive functions, using the sonar may now
+		also work, as the major problems may have been a result of the controller code.
+
+	3. Might be able to use light sensor to slow down when flame is detected to give more time
+		for the color sensor to register the black paper.
+
+	4. Define macros for port names as the relate to thier sensors and motors to make code easier
+		to understand.
 */
 
 /*
 	File: src.c
-	Description: Robot manipulator that draws polygons (all measurements in SI units)
+
+	Description: Fire detection robot code for Group Project 2.
+
 	Author: Team 6
 */
 #include <stdlib.h> 
 #include "kernel.h"
 #include "kernel_id.h"
-#include "ecrobot_interface.h"	
-#include <math.h>
-
+#include "ecrobot_interface.h"
+	
 /*
 	MACROS 
 */
 
-#ifndef M_PI
-#define M_PI 3.1415927
-#endif
+/* For sweep tone */
+#define FREQ_MAX 2093 /* C,7 */
+#define FREQ_MIN 31 /* B,0 */
+#define ASCEND 1.059463094F /* 2^(1/12) */
+#define DESCEND 0.943874313F /* 2^(-1/12) */
 
-/* Lengths */
-#define L0 0.25
-#define L1 0.2
-#define L2 0.2
-#define L3 0.15
+#define DRIVE_MOTOR NXT_PORT_B
+#define LIFT_MOTOR_1 NXT_PORT_PORT_A
+#define LIFT_MOTOR_2 NXT_PORT_PORT_C
+#define COLOR_F1 NXT_PORT_PORT_S1
+#define COLOR_F2 NXT_PORT_PORT_S2
+#define COLOR_B1 NXT_PORT_PORT_S3
+#define COLOR_B2 NXT_PORT_PORT_S4
 
-/* Offsets */
-#define D1 0.04
-#define D2 0.04
-
-/* Angles */
-#define N_ANGLES 6
-
-/* Movements */
-#define MAX_ROTATION 90
-#define MAX_SPEED 50 
-
-/* Polygon */
-#define MAX_POLYGON 10
-
-/* Joints */
-#define J0 NXT_PORT_A
-#define J1 NXT_PORT_B
-#define J2 NXT_PORT_C
-
-/* Canvas based on 8.5" by 11" sheet of paper with 0.5" margins */
-#define CANVAS_M 0.267
-#define CANVAS_N 0.203
-#define CANVAS_MIDPOINT_X (CANVAS_N / 2)F
-#define CANVAS_MIDPOINT_Y (CANVAS_M / 2)F
-	
 /* 
 	GLOBAL VARS 
 */
+int g_spd = 45;
+int g_delay = 500;
+int g_turning = 0;
+int g_behavior = 0;
+int g_color_delay = 15;
+int g_bump = 0;
+int g_bump_time = 0;
+int g_fire_found = 0;
+int g_running = 0;
+int black = 0;
+int g_start_time = 0;
+int g_start_time2 = 0;
 
-/* Current angles calcuated using inverse kinematics */
-float theta[N_ANGLES] = {-1, -1, -1, -1, -1 ,-1};
+/* For sweep tone */
+double g_freq = FREQ_MIN;
+double g_gain = ASCEND;
 
-/* Current point desired */
-float point[3] = {-1, -1, -1};
-
-/* Coordinates of each polygon apex */
-float polygon[MAX_POLYGON][3]= { {-1, -1, -1},
-										{-1, -1, -1}, 
-										{-1, -1, -1}, 
-										{-1, -1, -1}, 
-										{-1, -1, -1},
-										{-1, -1, -1}, 
-										{-1, -1, -1}, 
-										{-1, -1, -1}, 
-										{-1, -1, -1},
-										{-1, -1, -1} };
-
-/* Counter */
-U8 n = 0;
+/* Color sensor params */
+U32 g_U32_freq;
+S16 g_buf1[3] = {-1,-1,-1};
+S16 g_buf2[3] = {-1,-1,-1};
+S16 g_buf3[3] = {-1,-1,-1};
+S16 g_buf4[3] = {-1,-1,-1};
 
 /*
 	FUNCTION PROTOTYPES
 */
-void I_Kin(float point[3], float theta[N_ANGLES]);
-void Move(float theta[N_ANGLES]);
+int getRandom(int min, int max);
+void disp(int row, char *str, int val);
+void drive(int spd);
+void go_up(int spd);
+void retract(int spd);
+void reverse(int spd);
+void turn(int spd);
+void alarm(void);
 
 /* LEJOS OSEK hooks */
-void ecrobot_device_initialize() {
+void ecrobot_device_initialize() 
+{
+	ecrobot_init_color_sensor(NXT_PORT_S1);	
+	ecrobot_init_color_sensor(NXT_PORT_S2);	
+	ecrobot_init_color_sensor(NXT_PORT_S3);	
+	ecrobot_init_color_sensor(NXT_PORT_S4);	
+}
+void ecrobot_device_terminate() 
+{
+	ecrobot_term_color_sensor(NXT_PORT_S1);
+	ecrobot_term_color_sensor(NXT_PORT_S2);
+	ecrobot_term_color_sensor(NXT_PORT_S3);
+	ecrobot_term_color_sensor(NXT_PORT_S4);
 }
 
 /* nxtOSEK hook to be invoked from an ISR in category 2 */
-void user_1ms_isr_type2(void){ /* do nothing */ }
+void user_1ms_isr_type2(void){ /* do unless we find a way to use it */ }
 
 /* 
-	Task for manipulator  
+	Task for stair climber
 */
 TASK(Task1)
 {
-	/* 
-		Main loop 
-	*/
+	//int start_time = systick_get_ms();
+	//while(systick_get_ms() < start_time + 2250){
+	//	drive(30);
+	//}
+	
+	//go_up(0);
+	//int start_time2 = systick_get_ms();
+	//while(systick_get_ms() < start_time2 + 2250){
+	//	retract(30);
+	//}
+	g_running = 1;
+	g_behavior = 1;
+	int temp_start = 0;
+	g_start_time = systick_get_ms();
+	while(systick_get_ms() < (g_start_time + g_color_delay)){
+		ecrobot_get_color_sensor(NXT_PORT_S4, g_buf1);
+		ecrobot_get_color_sensor(NXT_PORT_S4, g_buf2);
+		ecrobot_get_color_sensor(NXT_PORT_S4, g_buf3);
+		ecrobot_get_color_sensor(NXT_PORT_S4, g_buf4);
+	}
+	while(g_running){
 		
-	/* Is current point in first quadrant? */
-	while(polygon[n][0] > 0) {
-
-		/* Read point */
-		point[0] = polygon[n][0];
-		point[1] = polygon[n][1];
-		point[2] = polygon[n][2];
-
-		/* Calculate new angles using inverse kinematics */
-		I_Kin(point, theta);
-
-		/* Move motors to new angles */
-		Move(theta);
-
-		/* Read to next point */
-		n++;
+		switch(g_behavior){
+			case 0: // "drive forward" state
+				drive(30);
+				if((g_buf1[0] == 0) && (g_buf1[1] == 0) && (g_buf1[2] == 0) 
+				&& (g_buf2[0] == 0) && (g_buf2[1] == 0) && (g_buf2[2] == 0)){
+					g_behavior = 1; // set to go_up
+					drive(0);
+				}
+				break;
+			case 1: // "go up" state
+				g_start_time = systick_get_ms();
+				while(systick_get_ms() < g_start_time + 2950){
+					go_up(50);
+					drive(50);
+				}
+				go_up(0);
+				drive(0);
+				g_start_time2 = systick_get_ms();
+				while(systick_get_ms() < g_start_time2 + 750){
+					drive(80);
+				}
+				drive(0);
+				g_behavior = 2; // set to retract
+				break;
+			case 2: // "retract" state
+				g_start_time = systick_get_ms();
+				//over a 5 second interval, alternate between retracting and driving
+				while(systick_get_ms() < g_start_time + 10000){
+					temp_start = systick_get_ms();
+					while(systick_get_ms() < temp_start + 250){
+						drive(0);
+						retract(50);
+					}
+					temp_start = systick_get_ms();
+					while(systick_get_ms() < temp_start + 1000){
+						retract(0);
+						drive(100);
+					}
+					
+				}
+				retract(0);
+				drive(0);
+				g_start_time2 = systick_get_ms();
+				while(systick_get_ms() < g_start_time2 + 250){
+					retract(30);
+					drive(30);
+				}
+				retract(0);
+				drive(0);
+				g_behavior = 3;
+				//g_running = 0;
+				break;
+			case 3:
+				drive(0);
+				//retract(0);
+				g_behavior = 3;
+			//case 4:
+			//case 5:		
+		}
 	}
 
-	/* Brake all motors when complete */
 	
+	go_up(0);
 	TerminateTask();
 }
 
-/* Functions */
+
+/* Sub functions */
 
 /* 
  * LEJOS OSEK V1.07 has an interrupt based LCD display feature thanks to LEJOS NXJ develpment team.
@@ -145,60 +217,105 @@ void disp(int row, char *str, int val)
 #endif
 }
 
+void retract(int spd){
+	nxt_motor_set_speed(NXT_PORT_A, -spd, 1);
+	nxt_motor_set_speed(NXT_PORT_C, -spd, 1);
+}
+
+void go_up(int spd){
+	//sound_freq(233, 400);
+	//int rev_constant = 50;
+        //int rev_a = nxt_motor_get_count(NXT_PORT_A);
+	//int rev_c = nxt_motor_get_count(NXT_PORT_C);
+	//int total_rev_a = rev_a + rev_constant; 
+	//int total_rev_c = rev_c + rev_constant;
+	//while((rev_a < total_rev_a) && (rev_c < total_rev_c)){
+	//	nxt_motor_set_speed(NXT_PORT_A, spd, 1);
+	//	nxt_motor_set_speed(NXT_PORT_C, spd, 1);
+	//	rev_a = nxt_motor_get_count(NXT_PORT_A);
+	//	rev_c = nxt_motor_get_count(NXT_PORT_C);
+	//}
+
+	nxt_motor_set_speed(NXT_PORT_A, spd, 1);
+	nxt_motor_set_speed(NXT_PORT_C, spd, 1);
+	//sound_freq(233*2, 400);
+}
 /*
-	Function Name: I_Kin(float point[], float theta[])
+	Function Name: drivev_a = nxt_motor_get_count(NXT_PORT_A)
+
+	Description: 
+		Pulses robot drive motors forward at desired rate indicated by spd parameter.
+
+	Params:
+		int spd - Desired speed
+
+	Returns: 
+		Nothing
+*/
+void drive(int spd) {
+	if (spd != 0) {
+
+		nxt_motor_set_speed(NXT_PORT_B, spd, 1); 			
+	}else{
+		nxt_motor_set_speed(NXT_PORT_B, spd, 1); 	
+	}
+}
+
+/*
+	Function Name: reverse
+
 	Description: 
 		Pulses robot drive motors backward at desired rate indicated by spd parameter.
+
 	Params:
-		float coord[3] - Desired coordinate
+		int spd - Desired speed
+
 	Returns: 
 		Nothing
 */
-void I_Kin(float point[3], float theta[N_ANGLES]) {
-
-	/* Angle formulas */
-	float alpha = atan2(point[1], point[0]);
-	float beta = asin( D1 / sqrt( ((point[0] * point[0]) + (point[1] * point[1]))) );
-	theta[0] = alpha - beta;
-
-	/* Adjsut for offsets */
-	float point_0[3] = {0, 0, L0};
-
-	float p_trans[3] = { ( point[0] - (D2 * cos(theta[0])) + (D1 * sin(theta[0])) ),
-							 ( point[1] - (D1 * sin(theta[0])) - (D2 * cos(theta[0])) ),
-							 ( point[2] + L3 )
-						  };
-
-	/* Set up remaining parameters */
-	float L4 = sqrt( ( (p_trans[0] - point_0[0]) * (p_trans[1] - point_0[0]) )
-		+ ( (p_trans[1] - point_0[1]) * (p_trans[1] - point_0[1]) )
-		+ ( (p_trans[2] - point_0[2]) * (p_trans[2] - point_0[2]) ) );
-
-	float beta2 = acos( ( (2* (L1 * L1)) - (L4 * L4) ) / (2 * (L1 * L1)) );
-
-	float alpha2 = acos( (p_trans[2] - L0) / L4 );
-
-	float delta = ( M_PI - beta2) / 2;
-
-	/* Determine angles */
-	theta[1] = alpha2 - delta - (M_PI / 2);
-	theta[2] = M_PI - beta2;
-	theta[3] = (M_PI / 2) - theta[1] - theta[2];
-	theta[4] = 0;
-	theta[5] = 0;
-
+void reverse(int spd) {
+		nxt_motor_set_speed(NXT_PORT_B, -spd, 1); 			
+		nxt_motor_set_speed(NXT_PORT_C, -spd, 1); 			
 }
 
 /*
-	Function Name: move(float theta[])
+	Function Name: turn
+
 	Description: 
-		Pulses manipulator joint motors with assistance from PD-controller to move to given angle.
+		Pulses robot drive motors in opposite directions at desired rate indicated by spd parameter.
+
 	Params:
-		float theta[] - New angles
+		int spd - Desired speed
+
 	Returns: 
 		Nothing
 */
-void Move(float theta[N_ANGLES]) {
-	/* Move to new angles using current angles (rev count) from motors */	
+void turn(int spd) {
+		nxt_motor_set_speed(NXT_PORT_B, -spd, 1); 			
+		nxt_motor_set_speed(NXT_PORT_C, spd, 1); 			
 }
 
+/*
+	Function Name: alarm
+
+	Description: 
+		Plays sweeping alarm tone. Not completely sure how it works. Taken from 
+			../nxtOSEK/samples_c/soundtest/soundtest.c
+
+	Params:
+		None
+
+	Returns: 
+		Nothing
+*/
+void alarm(void) {
+
+	/* Rounding */
+	g_U32_freq = (U32)(g_freq + 0.5); 
+	sound_freq(g_U32_freq, 5000);
+
+	/* Fire fire!!! sweep tone */
+	if (g_freq <= FREQ_MAX) g_gain = DESCEND;
+	else if (g_freq <= FREQ_MIN) g_gain = ASCEND;
+	g_freq *= g_gain;
+}
