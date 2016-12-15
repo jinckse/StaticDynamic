@@ -25,14 +25,19 @@
 #define COLOR_B1 NXT_PORT_S3
 #define COLOR_B2 NXT_PORT_S4
 
+#define DRIVE_SPEED 50
+
 /* 
 	GLOBAL VARS 
 */
 int spd = 45;
+
 int delay = 500;
+int color_delay = 15;
+
 int turning = 0;
 int behavior = 0;
-int color_delay = 15;
+int color_time = 0;
 int running = 0;
 int black = 0;
 int start_time = 0;
@@ -102,23 +107,48 @@ TASK(Task1)
 			case 0: 
 				drive(30);
 
+				/* See black */
 				if((buf_f1[0] == 0) && (buf_f1[1] == 0) && (buf_f1[2] == 0) 
 					&& (buf_f2[0] == 0) && (buf_f2[1] == 0) && (buf_f2[2] == 0)){
 
-					behavior = 1; // set to extend
+					/* Save time color sensor was tripped */
+					color_time = systick_get_ms();
+
+					/* Are we still seeing the color? */
+					while (systick_get_ms() < (color_time + color_delay)) {
+						ecrobot_get_color_sensor(COLOR_F1, buf_f1);
+						ecrobot_get_color_sensor(COLOR_F2, buf_f2);
+						ecrobot_get_color_sensor(COLOR_B1, buf_b1);
+						ecrobot_get_color_sensor(COLOR_B2, buf_b2);
+					}
+
+					if((buf_f1[0] == 0) && (buf_f1[1] == 0) && (buf_f1[2] == 0) 
+						&& (buf_f2[0] == 0) && (buf_f2[1] == 0) && (buf_f2[2] == 0)){
+
+						/* Extend lift */
+						behavior = 1; // set to extend
+					}
+
+					/* Stop */
 					drive(0);
 				}
 				break;
 
-			/* Extend lift */
+			/* Lift Extend Behavior */
 			case 1: 
 				start_time = systick_get_ms();
-				while(systick_get_ms() < start_time + 2950){
-					extend(50);
+
+				/* Begin lifting */
+				while(systick_get_ms() < start_time + 2250){
+					extend(40);
 					drive(50);
 				}
+
+				/* Stop everything */
 				extend(0);
 				drive(0);
+
+				/* Drive forward after catching step */
 				start_time2 = systick_get_ms();
 
 				while(systick_get_ms() < start_time2 + 750){
@@ -130,37 +160,23 @@ TASK(Task1)
 				behavior = 2; 
 				break;
 
-			/* Retract lift */
+			/* Lift Retract Behavior */
 			case 2: 
 				start_time = systick_get_ms();
 
 				//over a 5 second interval, alternate between retracting and driving
-				while(systick_get_ms() < start_time + 10000){
+				while(systick_get_ms() < start_time + 2250){
 					temp_start = systick_get_ms();
-
-					while(systick_get_ms() < temp_start + 250){
-						drive(0);
-						retract(50);
-					}
-
-					temp_start = systick_get_ms();
-
-					while(systick_get_ms() < temp_start + 1000){
-						retract(0);
-						drive(100);
-					}
-					
+					retract(50);
 				}
 				retract(0);
 				drive(0);
 				start_time2 = systick_get_ms();
 
-				while(systick_get_ms() < start_time2 + 250){
-					retract(30);
-					drive(30);
-				}
+				/* Stop everything */
 				retract(0);
 				drive(0);
+
 				behavior = 3;
 				break;
 
@@ -176,7 +192,6 @@ TASK(Task1)
 	extend(0);
 	TerminateTask();
 }
-
 
 /* Sub functions */
 
@@ -251,8 +266,6 @@ void drive(int spd) {
 	if (spd != 0) {
 
 		nxt_motor_set_speed(DRIVE_MOTOR, spd, 1); 			
-	}else{
-		nxt_motor_set_speed(DRIVE_MOTOR, spd, 1); 	
 	}
 }
 
@@ -269,24 +282,8 @@ void drive(int spd) {
 		Nothing
 */
 void reverse(int spd) {
-		nxt_motor_set_speed(NXT_PORT_B, -spd, 1); 			
-		nxt_motor_set_speed(NXT_PORT_C, -spd, 1); 			
-}
-
-/*
-	Function Name: turn
-
-	Description: 
-		Pulses robot drive motors in opposite directions at desired rate indicated by spd parameter.
-
-	Params:
-		int spd - Desired speed
-
-	Returns: 
-		Nothing
-*/
-void turn(int spd) {
-		nxt_motor_set_speed(NXT_PORT_B, -spd, 1); 			
-		nxt_motor_set_speed(NXT_PORT_C, spd, 1); 			
+	if (spd != 0) {
+		nxt_motor_set_speed(DRIVE_MOTOR, -spd, 1); 			
+	}
 }
 

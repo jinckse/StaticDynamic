@@ -1,5 +1,5 @@
 # Target specific macros
-TARGET = StaticFire
+TARGET = StaticDynamic
 TARGET_SOURCES = \
 	src.c
 TOPPERS_OSEK_OIL_SOURCE = ./src.oil
