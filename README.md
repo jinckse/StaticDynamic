@@ -1,3 +1,3 @@
 # StaticDynamic
 
-Lego NXT stair-climbinb robot. Created for Autonomous Robot Design and Programming course.
+Lego NXT stair-climbing robot. Created for Autonomous Robot Design and Programming course.
