@@ -13,69 +13,40 @@
 /*
 	MACROS 
 */
+/* Two drive one extend version */
+#define DRIVE_MOTOR_1 NXT_PORT_A
+#define DRIVE_MOTOR_2 NXT_PORT_C
+#define LIFT_MOTOR NXT_PORT_B
 
-/* For sweep tone */
-#define DRIVE_MOTOR NXT_PORT_B
+/* One Drive two extend version */
+#define DRIVE_MOTOR NXT_PORT_A
+#define LIFT_MOTOR_1 NXT_PORT_C
+#define LIFT_MOTOR_2 NXT_PORT_B
 
-#define LIFT_MOTOR_1 NXT_PORT_A
-#define LIFT_MOTOR_2 NXT_PORT_C
-
-#define COLOR_F1 NXT_PORT_S1
-#define COLOR_F2 NXT_PORT_S2
-#define COLOR_B1 NXT_PORT_S3
-#define COLOR_B2 NXT_PORT_S4
+#define EXTEND_DELAY 3000
+#define RETRACT_DELAY 1250
 
 #define DRIVE_SPEED 50
 
 /* 
 	GLOBAL VARS 
 */
-int spd = 45;
-
-int delay = 500;
-int color_delay = 15;
-
-int turning = 0;
 int behavior = 0;
-int color_time = 0;
-int running = 0;
-int black = 0;
 int start_time = 0;
 int start_time2 = 0;
-
-/* Color sensor params */
-U32 U32_freq;
-S16 buf_f1[3] = {-1,-1,-1};
-S16 buf_f2[3] = {-1,-1,-1};
-S16 buf_b1[3] = {-1,-1,-1};
-S16 buf_b2[3] = {-1,-1,-1};
 
 /*
 	FUNCTION PROTOTYPES
 */
-int getRandom(int min, int max);
 void disp(int row, char *str, int val);
 void drive(int spd);
 void extend(int spd);
 void retract(int spd);
 void reverse(int spd);
-void turn(int spd);
 
 /* LEJOS OSEK hooks */
-void ecrobot_device_initialize() 
-{
-	ecrobot_init_color_sensor(COLOR_F1);	
-	ecrobot_init_color_sensor(COLOR_F2);	
-	ecrobot_init_color_sensor(COLOR_B1);	
-	ecrobot_init_color_sensor(COLOR_B2);	
-}
-void ecrobot_device_terminate() 
-{
-	ecrobot_term_color_sensor(COLOR_F1);
-	ecrobot_term_color_sensor(COLOR_F2);
-	ecrobot_term_color_sensor(COLOR_B1);
-	ecrobot_term_color_sensor(COLOR_B2);
-}
+void ecrobot_device_initialize() {}
+void ecrobot_device_terminate() {}
 
 /* nxtOSEK hook to be invoked from an ISR in cateory 2 */
 void user_1ms_isr_type2(void){ /* do nothing unless we find a way to use it */ }
@@ -85,61 +56,23 @@ void user_1ms_isr_type2(void){ /* do nothing unless we find a way to use it */ }
 */
 TASK(Task1)
 {
-	running = 1;
-	behavior = 1;
-
 	int temp_start = 0;
 
 	start_time = systick_get_ms();
 
-	while(systick_get_ms() < (start_time + color_delay)){
-		ecrobot_get_color_sensor(COLOR_F1, buf_f1);
-		ecrobot_get_color_sensor(COLOR_F2, buf_f2);
-		ecrobot_get_color_sensor(COLOR_B1, buf_b1);
-		ecrobot_get_color_sensor(COLOR_B2, buf_b2);
-	}
-
-	while(running){
+	/* Main loop */
+	while(1){
 		
 		switch(behavior){
 
-			/* Drive forward */
-			case 0: 
-				drive(30);
-
-				/* See black */
-				if((buf_f1[0] == 0) && (buf_f1[1] == 0) && (buf_f1[2] == 0) 
-					&& (buf_f2[0] == 0) && (buf_f2[1] == 0) && (buf_f2[2] == 0)){
-
-					/* Save time color sensor was tripped */
-					color_time = systick_get_ms();
-
-					/* Are we still seeing the color? */
-					while (systick_get_ms() < (color_time + color_delay)) {
-						ecrobot_get_color_sensor(COLOR_F1, buf_f1);
-						ecrobot_get_color_sensor(COLOR_F2, buf_f2);
-						ecrobot_get_color_sensor(COLOR_B1, buf_b1);
-						ecrobot_get_color_sensor(COLOR_B2, buf_b2);
-					}
-
-					if((buf_f1[0] == 0) && (buf_f1[1] == 0) && (buf_f1[2] == 0) 
-						&& (buf_f2[0] == 0) && (buf_f2[1] == 0) && (buf_f2[2] == 0)){
-
-						/* Extend lift */
-						behavior = 1; // set to extend
-					}
-
-					/* Stop */
-					drive(0);
-				}
-				break;
-
 			/* Lift Extend Behavior */
-			case 1: 
+			case 0: 
+
+				/* Grab behavior start time */
 				start_time = systick_get_ms();
 
 				/* Begin lifting */
-				while(systick_get_ms() < start_time + 2250){
+				while(systick_get_ms() < start_time + EXTEND_DELAY){
 					extend(40);
 					drive(50);
 				}
@@ -148,9 +81,9 @@ TASK(Task1)
 				extend(0);
 				drive(0);
 
-				/* Drive forward after catching step */
 				start_time2 = systick_get_ms();
 
+				/* Drive forward after catching step */
 				while(systick_get_ms() < start_time2 + 750){
 					drive(80);
 				}
@@ -161,34 +94,30 @@ TASK(Task1)
 				break;
 
 			/* Lift Retract Behavior */
-			case 2: 
+			case 1: 
+				systick_wait_ms(500);
+
+				/* Grab behavior start time */
 				start_time = systick_get_ms();
 
-				//over a 5 second interval, alternate between retracting and driving
-				while(systick_get_ms() < start_time + 2250){
+				/* Begin retracting */
+				while(systick_get_ms() < start_time + RETRACT_DELAY){
 					temp_start = systick_get_ms();
 					retract(50);
 				}
-				retract(0);
-				drive(0);
-				start_time2 = systick_get_ms();
 
 				/* Stop everything */
 				retract(0);
 				drive(0);
 
-				behavior = 3;
+				/* Climb next step */
+				behavior = 0;
 				break;
 
-			case 3:
-				drive(0);
-				behavior = 3;
-
-			//case 4:
-			//case 5:		
+			default:
+				break;
 		}
 	}
-
 	extend(0);
 	TerminateTask();
 }
@@ -228,8 +157,7 @@ void disp(int row, char *str, int val)
 		Nothing
 */
 void retract(int spd){
-	nxt_motor_set_speed(LIFT_MOTOR_1, -spd, 1);
-	nxt_motor_set_speed(LIFT_MOTOR_2, -spd, 1);
+	nxt_motor_set_speed(LIFT_MOTOR, -spd, 1);
 }
 
 /*
@@ -246,8 +174,7 @@ void retract(int spd){
 */
 void extend(int spd){
 
-	nxt_motor_set_speed(LIFT_MOTOR_1, spd, 1);
-	nxt_motor_set_speed(LIFT_MOTOR_2, spd, 1);
+	nxt_motor_set_speed(LIFT_MOTOR, spd, 1);
 }
 
 /*
@@ -263,10 +190,8 @@ void extend(int spd){
 		Nothing
 */
 void drive(int spd) {
-	if (spd != 0) {
-
-		nxt_motor_set_speed(DRIVE_MOTOR, spd, 1); 			
-	}
+	nxt_motor_set_speed(DRIVE_MOTOR_1, -spd, 1); 			
+	nxt_motor_set_speed(DRIVE_MOTOR_2, -spd, 1); 			
 }
 
 /*
@@ -282,8 +207,7 @@ void drive(int spd) {
 		Nothing
 */
 void reverse(int spd) {
-	if (spd != 0) {
-		nxt_motor_set_speed(DRIVE_MOTOR, -spd, 1); 			
-	}
+	nxt_motor_set_speed(DRIVE_MOTOR_1, spd, 1); 			
+	nxt_motor_set_speed(DRIVE_MOTOR_2, spd, 1); 			
 }
 
