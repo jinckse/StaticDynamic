@@ -19,12 +19,12 @@
 #define LIFT_MOTOR NXT_PORT_B
 
 /* One Drive two extend version */
-#define DRIVE_MOTOR NXT_PORT_A
-#define LIFT_MOTOR_1 NXT_PORT_C
-#define LIFT_MOTOR_2 NXT_PORT_B
+#define DRIVE_MOTOR NXT_PORT_B
+#define LIFT_MOTOR_1 NXT_PORT_A
+#define LIFT_MOTOR_2 NXT_PORT_C
 
-#define EXTEND_DELAY 3000
-#define RETRACT_DELAY 1250
+#define EXTEND_DELAY 2750
+#define RETRACT_DELAY 1750
 
 #define DRIVE_SPEED 50
 
@@ -34,6 +34,7 @@
 int behavior = 0;
 int start_time = 0;
 int start_time2 = 0;
+int stair_cnt = 0;
 
 /*
 	FUNCTION PROTOTYPES
@@ -73,7 +74,7 @@ TASK(Task1)
 
 				/* Begin lifting */
 				while(systick_get_ms() < start_time + EXTEND_DELAY){
-					extend(40);
+					extend(50);
 					drive(50);
 				}
 
@@ -90,7 +91,7 @@ TASK(Task1)
 				drive(0);
 
 				/* Change to Retract behavior */
-				behavior = 2; 
+				behavior = 1; 
 				break;
 
 			/* Lift Retract Behavior */
@@ -110,8 +111,38 @@ TASK(Task1)
 				retract(0);
 				drive(0);
 
-				/* Climb next step */
-				behavior = 0;
+				start_time2 = systick_get_ms();
+
+				/* Scoot forward after catching step */
+				while(systick_get_ms() < start_time2 + 100){
+					drive(30);
+				}
+				systick_wait_ms(1000);
+				while(systick_get_ms() < start_time2 + 100){
+					drive(30);
+				}
+				systick_wait_ms(1000);
+				while(systick_get_ms() < start_time2 + 100){
+					drive(30);
+				}
+				drive(0);
+
+				/* Stabilize */
+				systick_wait_ms(500);
+
+				/* Climb two stepss */
+				if(stair_cnt < 1) {
+					behavior = 0;
+				}
+				else {
+					behavior = 2;
+				}
+
+				stair_cnt++;
+
+				break;
+
+			case 2:
 				break;
 
 			default:
@@ -157,7 +188,8 @@ void disp(int row, char *str, int val)
 		Nothing
 */
 void retract(int spd){
-	nxt_motor_set_speed(LIFT_MOTOR, -spd, 1);
+	nxt_motor_set_speed(LIFT_MOTOR_1, -spd, 1);
+	nxt_motor_set_speed(LIFT_MOTOR_2, -spd, 1);
 }
 
 /*
@@ -174,7 +206,8 @@ void retract(int spd){
 */
 void extend(int spd){
 
-	nxt_motor_set_speed(LIFT_MOTOR, spd, 1);
+	nxt_motor_set_speed(LIFT_MOTOR_1, spd, 1);
+	nxt_motor_set_speed(LIFT_MOTOR_2, spd, 1);
 }
 
 /*
@@ -190,8 +223,7 @@ void extend(int spd){
 		Nothing
 */
 void drive(int spd) {
-	nxt_motor_set_speed(DRIVE_MOTOR_1, -spd, 1); 			
-	nxt_motor_set_speed(DRIVE_MOTOR_2, -spd, 1); 			
+	nxt_motor_set_speed(DRIVE_MOTOR, spd, 1); 			
 }
 
 /*
@@ -207,7 +239,6 @@ void drive(int spd) {
 		Nothing
 */
 void reverse(int spd) {
-	nxt_motor_set_speed(DRIVE_MOTOR_1, spd, 1); 			
-	nxt_motor_set_speed(DRIVE_MOTOR_2, spd, 1); 			
+	nxt_motor_set_speed(DRIVE_MOTOR, -spd, 1); 			
 }
 
